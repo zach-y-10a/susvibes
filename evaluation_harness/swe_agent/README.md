@@ -12,6 +12,8 @@ format. The dataset's `problem_statement` is used as-is.
 ## Files
 
 - **`run_infer.py`** - Runs SWE-agent over a dataset and writes `predictions.json`.
+- **`setup_vm.sh`** - One-shot, idempotent VM setup (Docker, conda envs, fork + patched SWE-agent, offline tests).
+- **`pull_images.py`** - Pre-pulls every task image, in parallel, stopping before the disk fills.
 - **`run_suite.py`** - Runs every model in `models.yaml` through `run_infer.py`, then scores them in one eval run.
 - **`models.yaml`** - The model suite: litellm model string, endpoint, sampling and provider kwargs per model.
 - **`setting.yaml`** - Run configuration (SWE-agent config(s), conda env, workers, model limits).
@@ -36,6 +38,17 @@ conda run -n sweagent1.1.0 pip install -e ../SWE-agent
 
 Provider API keys are read from the environment by litellm (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 `GEMINI_API_KEY`, ...) or from the `$ENV_VAR` named in a model's `api_key`.
+
+### On a fresh VM
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zach-y-10a/susvibes/swe-agent-multi-model/evaluation_harness/swe_agent/setup_vm.sh | bash
+```
+
+This clones everything under `~/susvibes-work` and installs both conda envs (`sv` for the harness and
+eval, `sweagent1.1.0` for SWE-agent). Then pre-pull the task images with `pull_images.py`. Every model
+shares the 186 images: about 165 GB compressed after layer sharing, an estimated 330-500 GB on disk,
+plus one derived image per task that SWE-agent builds. Give Docker at least 750 GB.
 
 ### Run one model
 
