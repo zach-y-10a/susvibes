@@ -35,3 +35,7 @@ results/
 .claude/
 CLAUDE.md
 /docs/
+
+/runs/
+/logs/
+.venv/

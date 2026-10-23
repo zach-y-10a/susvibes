@@ -1,0 +1,5 @@
+# Drops SWE-agent's Anthropic prompt-caching marks (the `cache_control` history processor in
+# susvibes_eval.yaml). Apply after susvibes_eval for any provider that rejects or ignores
+# `cache_control` on messages; list values replace rather than merge across configs.
+agent:
+  history_processors: []

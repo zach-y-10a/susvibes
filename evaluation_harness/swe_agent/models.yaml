@@ -1,0 +1,120 @@
+# Model suite for run_suite.py. Every model runs through the same SWE-agent scaffold
+# (configs/susvibes_eval.yaml), so scores differ only by model.
+#
+# Per-model fields:
+#   label           Name used for output dirs and as `model_name_or_path` in predictions.
+#   model           litellm model string: `<provider>/<model id>`, or `openai/<model id>` together
+#                   with `api_base` for any OpenAI-compatible endpoint.
+#   api_base        Optional endpoint override.
+#   api_key         Optional; `$ENV_VAR` is resolved by SWE-agent. Without it litellm reads the
+#                   provider's standard env var (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...).
+#   cache           true keeps SWE-agent's Anthropic `cache_control` marks; false applies no_cache.
+#   agent_model     Merged into SWE-agent's `agent.model` (temperature, top_p, completion_kwargs,
+#                   max_input_tokens, max_output_tokens, ...), on top of `defaults.agent_model`.
+#   per_instance_cost_limit / per_instance_call_limit   Override setting.yaml. A nonzero cost
+#                   limit needs litellm to know the model's price, or every call errors out.
+#
+# Every `TODO` must be checked against the provider's docs before a run. The IDs and effort values
+# here are placeholders shaped by each provider's naming, not verified IDs. `run_suite.py --smoke`
+# runs one instance per model, which catches a wrong ID or a rejected parameter cheaply.
+
+defaults:
+  cache: false
+  agent_model:
+    # Reasoning models at their provider-default sampling: several reject temperature/top_p
+    # outright (Anthropic rejects both on every model), so neither is sent.
+    temperature: null
+    top_p: null
+    completion_kwargs:
+      timeout: 1800              # seconds per request; high-effort turns can run long
+    retry:
+      retries: 20
+      min_wait: 10
+      max_wait: 180
+
+models:
+  # ── Western ─────────────────────────────────────────────────────────────────────────────
+  - label: claude-opus-5-5-max
+    model: anthropic/claude-opus-5-5
+    cache: true
+    agent_model:
+      max_input_tokens: 1000000
+      max_output_tokens: 64000
+      completion_kwargs:
+        max_tokens: 64000
+        output_config: {effort: max}   # thinking is always on for Opus 5.5; effort sets depth
+
+  - label: gpt-6-astra-max
+    model: openai/gpt-6-astra          # TODO: exact model ID
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: max          # TODO: OpenAI's name for the top effort level
+
+  - label: gemini-4-argon-high
+    model: gemini/gemini-4-argon       # TODO: exact model ID
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: high
+
+  - label: grok-4.7-xhigh
+    model: xai/grok-4.7                # TODO: exact model ID
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: xhigh        # TODO: confirm xAI accepts xhigh
+
+  - label: muse-wonder-full-max
+    model: openai/muse-wonder-full     # TODO: exact model ID
+    api_base: https://TODO             # TODO: Meta's API endpoint
+    api_key: $META_API_KEY
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: max          # TODO: Meta's effort parameter
+
+  - label: mistral-large-4-preview
+    model: mistral/mistral-large-4-preview   # TODO: exact model ID
+
+  # ── Chinese ─────────────────────────────────────────────────────────────────────────────
+  - label: mimo-v2.6-pro
+    model: openai/mimo-v2.6-pro        # TODO: exact model ID
+    api_base: https://TODO             # TODO: Xiaomi MiMo API endpoint
+    api_key: $XIAOMI_API_KEY
+
+  - label: qwen3.8-max-0902
+    model: dashscope/qwen3.8-max-0902  # TODO: exact model ID
+    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+
+  - label: deepseek-v4.1-flash-1017-max
+    model: deepseek/deepseek-v4.1-flash-1017   # TODO: exact model ID
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: max          # TODO: DeepSeek's thinking/effort parameter
+
+  - label: glm-5.3-max
+    model: openai/glm-5.3              # TODO: exact model ID
+    api_base: https://api.z.ai/api/paas/v4
+    api_key: $ZAI_API_KEY
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: max          # TODO: Z.ai's thinking/effort parameter
+
+  - label: step-5-preview
+    model: openai/step-5-preview       # TODO: exact model ID
+    api_base: https://api.stepfun.com/v1
+    api_key: $STEPFUN_API_KEY
+
+  - label: kimi-k3-max
+    model: moonshot/kimi-k3            # TODO: exact model ID
+    api_base: https://api.moonshot.ai/v1
+    agent_model:
+      completion_kwargs:
+        reasoning_effort: max          # TODO: Moonshot's thinking/effort parameter
+
+  - label: minimax-m3.1-flash
+    model: openai/minimax-m3.1-flash   # TODO: exact model ID
+    api_base: https://api.minimax.io/v1
+    api_key: $MINIMAX_API_KEY
+
+  - label: ling-3.1-flash
+    model: openai/ling-3.1-flash       # TODO: exact model ID
+    api_base: https://TODO             # TODO: InclusionAI / Ant API endpoint
+    api_key: $LING_API_KEY

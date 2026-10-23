@@ -15,13 +15,31 @@ Usage:
 
 import argparse
 import json
+import shutil
 from pathlib import Path
 
-from susvibes.core.agents.ports import SWEAgentPort
+from susvibes.core.agents.sweagent import SWEAgentPort
 from susvibes.core.utils import load_file, save_file
 from susvibes.env_specs import WORKSPACE_DIR_NAME
 
-SETTING_PATH = Path(__file__).parent / "setting.yaml"
+HARNESS_DIR = Path(__file__).parent
+SETTING_PATH = HARNESS_DIR / "setting.yaml"
+CONFIGS_DIR = HARNESS_DIR / "configs"
+REPO_ROOT = HARNESS_DIR.parent.parent
+
+
+def load_setting() -> dict:
+    """setting.yaml with `sweagent_dir` resolved against the SusVibes repo root."""
+    setting = load_file(SETTING_PATH)
+    setting["sweagent_dir"] = (REPO_ROOT / setting["sweagent_dir"]).resolve()
+    return setting
+
+
+def install_configs(sweagent_dir: Path) -> None:
+    """SWE-agent resolves `--config=config/<name>.yaml` against its own codebase, so the
+    SusVibes configs are copied in there before every batch."""
+    for config_path in CONFIGS_DIR.glob("*.yaml"):
+        shutil.copy(config_path, Path(sweagent_dir) / "config" / config_path.name)
 
 
 def run_infer(
@@ -31,14 +49,20 @@ def run_infer(
     output_dir: Path = None,
     num_workers: int = None,
     instance_ids: list = None,
+    config_name: list = None,
+    model_overrides: dict = None,
+    force: bool = False,
 ) -> Path:
-    setting = load_file(SETTING_PATH)
+    """`config_name` replaces setting.yaml's config list (e.g. to add a per-model config);
+    `model_overrides` updates its cost/call limits."""
+    setting = load_setting()
+    install_configs(setting["sweagent_dir"])
     run_name = run_name or dataset_path.stem
-    output_dir = output_dir or (Path(setting["dir"]).resolve() / "trajectories" / "susvibes_eval" / run_name)
-    model = {**setting["model"], "name": model_name}
+    output_dir = output_dir or (setting["sweagent_dir"] / "trajectories" / "susvibes_eval" / run_name)
+    model = {**setting["model"], **(model_overrides or {}), "name": model_name}
     port = SWEAgentPort.from_settings(
         setting, run_name=run_name, model=model,
-        output_dir=output_dir, num_workers=num_workers,
+        output_dir=output_dir, num_workers=num_workers, config_name=config_name,
     )
 
     dataset = load_file(dataset_path)
@@ -54,7 +78,7 @@ def run_infer(
         )
     port.before_start()
 
-    agent_output_dir = port.run_batch()
+    agent_output_dir = port.run_batch(force=force)
     predictions, _ = SWEAgentPort.after_completion(agent_output_dir)
     predictions_path = agent_output_dir / "predictions.json"
     save_file(predictions, predictions_path)
