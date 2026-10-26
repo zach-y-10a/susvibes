@@ -52,7 +52,7 @@ docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     conda run -n sweagent1.1.0 pip install -q /tmp/swe
     conda run -n sweagent1.1.0 pip uninstall -q -y sweagent
     for env in sv sweagent1.1.0; do
-        conda pack -q -n "$env" -o "/out/$env.tar.gz" --force
+        conda-pack -q -n "$env" -o "/out/$env.tar.gz" --force
     done'
 
 log "Repositories"
