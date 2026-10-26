@@ -30,8 +30,11 @@ def validated_test_counts(logs: str, counts: dict[str, int], *, aggregate=False)
         result = {names[name]: int(n) for n, name in re.findall(
             r"\b(\d+) (passed|failed|errors?|skipped|xfailed|xpassed)\b", match[1])}
         summaries.append((match.start(), result))
+    # Some runners (openstack/nova's) print a "Summary:" block of "Name: N" lines between the
+    # "Ran N tests" line and the final status; the counts are still read from the status line.
     for match in re.finditer(
         r"^\s*Ran (\d+) tests? in [^\n]+\n\s*"
+        r"(?:Summary:\n(?:[A-Z][A-Za-z ]*: \d+\n)+\s*)?"
         r"(OK(?: \([^\n]*\))?|PASSED(?: \([^\n]*\))?|FAILED \([^\n]+\))\s*$",
         logs, re.MULTILINE,
     ):
