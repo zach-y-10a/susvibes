@@ -47,7 +47,7 @@ docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     conda install -y -q -n base conda-pack
     # pip/setuptools/wheel come from conda at the versions requirements.txt pins, so pip never
     # replaces conda-managed files (conda-pack refuses, rightly, to pack an env where it did).
-    pins="$(grep -E "^(pip|setuptools|wheel)==" /src/susvibes/requirements.txt | sed "s/==/=/" | tr "\n" " ")"
+    pins="$(grep -E "^(pip|setuptools|wheel)==" /src/susvibes/requirements.txt | tr "\n" " ")"  # == is exact in conda too
     conda create -y -q -n sv python=3.11 $pins
     conda run -n sv pip install -q -r /src/susvibes/requirements.txt pytest
     conda create -y -q -n sweagent1.1.0 python=3.11 setuptools wheel
