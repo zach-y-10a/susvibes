@@ -66,7 +66,7 @@ log "Conda env: sv (SusVibes harness + eval)"
 
 log "Conda env: sweagent1.1.0 (SWE-agent)"
 "$CONDA" env list | grep -qE '^sweagent1\.1\.0\s' || "$CONDA" create -y -q -n sweagent1.1.0 python=3.11
-"$CONDA" run -n sweagent1.1.0 pip install -q -e "$WORK/SWE-agent"
+"$CONDA" run -n sweagent1.1.0 pip install -q -e "$WORK/SWE-agent" "mcp>=2.2.0,<3"  # mcp: see offline/build_bundle.sh
 
 log "Offline tests"
 (cd "$WORK/susvibes" && "$CONDA" run -n sv python -m pytest -q tests)

@@ -56,6 +56,9 @@ docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     mkdir -p /tmp/swe && tar -C /src/SWE-agent --exclude=.venv --exclude=.git -cf - . | tar -C /tmp/swe -xf -
     conda run -n sweagent1.1.0 pip install -q /tmp/swe
     conda run -n sweagent1.1.0 pip uninstall -q -y sweagent
+    # litellm imports its MCP handler on every completion() that carries tools (all SWE-agent
+    # calls), and that needs the optional `mcp` package; without it every model call fails.
+    conda run -n sweagent1.1.0 pip install -q "mcp>=2.2.0,<3"
     for env in sv sweagent1.1.0; do
         conda-pack -q -n "$env" -o "/out/$env.tar.gz" --force
     done'

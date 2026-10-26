@@ -30,6 +30,7 @@ FIRST_PROMPT = (
     "with the command `echo susvibes-check`. Do not call any other tool."
 )
 SECOND_PROMPT = "Good. Now reply with the single word DONE and do not call any tool."
+CHECK_RETRIES = 2
 
 
 def build_model(entry: dict, setting: dict):
@@ -46,6 +47,9 @@ def build_model(entry: dict, setting: dict):
     ]
     config = BasicCLI(RunSingleConfig, help_text="").get_config(args)
     agent_config = config.agent
+    # The suite retries for a long time (rate limits mid-run); a check should fail fast and say why.
+    agent_config.model.retry.retries = CHECK_RETRIES
+    agent_config.model.retry.max_wait = 20
     return get_model(agent_config.model, agent_config.tools), agent_config.history_processors
 
 

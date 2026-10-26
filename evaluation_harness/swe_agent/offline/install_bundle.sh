@@ -75,6 +75,9 @@ log "Editable installs (offline)"
 "$CONDA" run -n sv pip install -q --no-index --no-deps --no-build-isolation -e "$WORK/susvibes"
 "$CONDA" run -n sweagent1.1.0 pip install -q --no-index --no-deps --no-build-isolation -e "$WORK/SWE-agent"
 "$CONDA" run -n sweagent1.1.0 sweagent --help >/dev/null && echo "sweagent OK"
+# The module litellm loads on any completion() with tools; fails here, not on the first model call.
+"$CONDA" run -n sweagent1.1.0 python -c "import litellm.responses.mcp.chat_completions_handler" \
+    && echo "litellm tool-call path OK"
 
 log "Offline tests"
 pytest_args=()
