@@ -102,6 +102,10 @@ models:
     api_base: https://api.stepfun.com/v1
     api_key: $STEPFUN_API_KEY
 
+  - label: kimi-k3.1-pro-openrouter
+    model: openrouter/moonshotai/kimi-k3.1-pro   # OpenRouter's ID; key in OPENROUTER_API_KEY
+    # Provider-default reasoning effort; set completion_kwargs.reasoning: {effort: ...} to pin one.
+
   - label: kimi-k3-max
     model: moonshot/kimi-k3            # TODO: exact model ID
     api_base: https://api.moonshot.ai/v1
