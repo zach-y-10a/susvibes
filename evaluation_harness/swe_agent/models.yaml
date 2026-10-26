@@ -33,6 +33,13 @@ defaults:
       max_wait: 180
 
 models:
+  # ── Harness test (not part of the suite) ────────────────────────────────────────────────
+  # Small, cheap and reachable from the VM: for smoke-testing the pipeline end to end.
+  - label: gpt-6.1-luna-test
+    model: openai/gpt-6.1-luna
+    # Newer than litellm 1.106's price table: no cost tracking, so no $ cap (it would error every
+    # call); setting.yaml's 200-calls-per-task limit bounds it. Watch spend in OpenAI's console.
+
   # ── Western ─────────────────────────────────────────────────────────────────────────────
   - label: claude-opus-5-5-max
     model: anthropic/claude-opus-5-5
