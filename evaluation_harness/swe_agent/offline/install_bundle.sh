@@ -83,7 +83,8 @@ log "Offline tests"
 pytest_args=()
 if [ -n "${SV_SKIP_SYSTEM:-}" ]; then  # no Docker daemon here; these connect to it on import
     pytest_args=(--ignore=tests/test_apply_validate_report_flags.py
-                 --deselect=tests/test_swe_agent_configs.py::test_eval_uses_local_image_when_pull_is_missing)
+                 --deselect=tests/test_swe_agent_configs.py::test_eval_uses_local_image_when_pull_is_missing
+                 --deselect=tests/test_swe_agent_configs.py::test_eval_threadpool_records_internal_errors)
 fi
 (cd "$WORK/susvibes" && "$CONDA" run -n sv python -m pytest -q tests "${pytest_args[@]}")
 
