@@ -5,6 +5,7 @@ sweagent_dir: ../SWE-agent         # SWE-agent codebase (relative to the SusVibe
 conda_env: sweagent1.1.0           # conda env with sweagent installed
 config_name: [susvibes_eval, no_cache]   # SWE-agent config(s) under configs/, applied in order
 num_workers: 8
+prebuilt_agent_images: true      # run on images from ship_images.py (no egress needed); false = SWE-agent builds them
 model:
   per_instance_cost_limit: 0.0     # 0 = unlimited
   per_instance_call_limit: 200

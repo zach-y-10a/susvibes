@@ -18,6 +18,7 @@ import json
 import shutil
 from pathlib import Path
 
+from prebuilt import agent_image_name
 from susvibes.core.agents.sweagent import SWEAgentPort
 from susvibes.core.utils import load_file, save_file
 from susvibes.env_specs import WORKSPACE_DIR_NAME
@@ -56,6 +57,7 @@ def run_infer(
     """`config_name` replaces setting.yaml's config list (e.g. to add a per-model config);
     `model_overrides` updates its cost/call limits."""
     setting = load_setting()
+    prebuilt = setting.pop("prebuilt_agent_images", False)
     install_configs(setting["sweagent_dir"])
     run_name = run_name or dataset_path.stem
     output_dir = output_dir or (setting["sweagent_dir"] / "trajectories" / "susvibes_eval" / run_name)
@@ -70,7 +72,9 @@ def run_infer(
         dataset = [record for record in dataset if record["instance_id"] in set(instance_ids)]
     for record in dataset:
         port.add_task(
-            image=record["image_name"],
+            image=agent_image_name(record["image_name"]) if prebuilt else record["image_name"],
+            python_standalone_dir=None if prebuilt else "/root",
+            pull="never" if prebuilt else "missing",
             repo_type="preexisting",
             repo_name=WORKSPACE_DIR_NAME,
             problem_statement=record["problem_statement"],

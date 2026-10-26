@@ -59,7 +59,11 @@ class SWEAgentPort:
         base_commit: str = None,
         lock_path: Path = None,
         extra_fields: dict = None,
+        python_standalone_dir: str | None = "/root",
+        pull: str = "missing",
     ) -> None:
+        """`python_standalone_dir=None` runs `image` as-is, for images that already carry swe-rex
+        (see evaluation_harness/swe_agent/prebuilt.py); `pull="never"` fails fast on a missing image."""
         assert repo_type in ["local", "preexisting"]
         repo_config = {"type": repo_type, "base_commit": base_commit or "HEAD"}
         if repo_type == "local":
@@ -83,7 +87,8 @@ class SWEAgentPort:
                 "deployment": {
                     "type": "docker",
                     "image": image or "python:3.11",
-                    "python_standalone_dir": "/root",
+                    "python_standalone_dir": python_standalone_dir,
+                    "pull": pull,
                     "docker_args": docker_args,
                 },
                 "repo": repo_config,
