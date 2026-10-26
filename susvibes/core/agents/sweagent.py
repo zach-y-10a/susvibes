@@ -1,10 +1,18 @@
 import os
+import shlex
+import shutil
 import signal
 import subprocess
 from pathlib import Path
 
 from susvibes.core.constants import ContainerLimits
 from susvibes.core.utils import load_file, save_file
+
+
+def conda_executable() -> str:
+    """conda, also from non-interactive shells (tmux, cron) where `conda init` hasn't put it on PATH."""
+    default = Path.home() / "miniforge3" / "bin" / "conda"
+    return os.environ.get("CONDA_EXE") or shutil.which("conda") or (str(default) if default.exists() else "conda")
 
 
 class SWEAgentPort:
@@ -138,7 +146,7 @@ class SWEAgentPort:
         has to reach here or it forces nothing. It maps to SWE-agent's own `--redo_existing`."""
         print(f"Running {self.run_name} with {len(self.task_instances)} tasks...")
         cmd = (
-            f"conda run -n {self.conda_env} --live-stream "
+            f"{shlex.quote(conda_executable())} run -n {self.conda_env} --live-stream "
             "sweagent run-batch "
             f"{self._config_args()} "
             f"--agent.model.name={self.model['name']} "

@@ -130,3 +130,16 @@ def test_eval_threadpool_records_internal_errors(monkeypatch) -> None:
     handler.run_evaluation_threadpool(predictions, max_workers=2)
     assert handler.reports["m"]["a"]["error"].startswith("Internal error")
     assert handler.reports["m"]["b"]["eval_status"] == task.EvalStatus.TESTED
+
+
+def test_conda_executable_without_conda_on_path(monkeypatch, tmp_path: Path) -> None:
+    from susvibes.core.agents import sweagent
+
+    monkeypatch.delenv("CONDA_EXE", raising=False)
+    monkeypatch.setenv("PATH", str(tmp_path))  # no conda here
+    monkeypatch.setattr(sweagent.Path, "home", lambda: tmp_path)
+    (tmp_path / "miniforge3" / "bin").mkdir(parents=True)
+    (tmp_path / "miniforge3" / "bin" / "conda").write_text("")
+    assert sweagent.conda_executable() == str(tmp_path / "miniforge3" / "bin" / "conda")
+    monkeypatch.setenv("CONDA_EXE", "/opt/x/bin/conda")
+    assert sweagent.conda_executable() == "/opt/x/bin/conda"
