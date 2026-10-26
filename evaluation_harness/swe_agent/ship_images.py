@@ -46,6 +46,8 @@ PLATFORM = "linux/amd64"
 
 log_lock = threading.Lock()
 quota_lock = threading.Lock()
+disk_lock = threading.Lock()
+reserved_gb = 0.0  # local disk promised to tasks in flight (guarded by disk_lock)
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -94,6 +96,35 @@ def dockerhub_pulls_remaining() -> int | None:
         return None  # unknown: don't block on the check itself
 
 
+def task_image_gb(image: str) -> float | None:
+    """Compressed size of a Docker Hub image, from the Hub API (not a pull)."""
+    repo, _, tag = image.partition(":")
+    try:
+        url = f"https://hub.docker.com/v2/repositories/{repo}/tags/{tag or 'latest'}"
+        return json.load(urllib.request.urlopen(url, timeout=20))["full_size"] / 1024 ** 3
+    except Exception:
+        return None
+
+
+def reserve_local_disk(need_gb: float, floor_gb: float, stop: threading.Event) -> bool:
+    """Wait until this task's disk need fits above the floor, counting what tasks in flight have
+    reserved, then reserve it. A task alone always proceeds (it may still fail on space, and says so)."""
+    global reserved_gb
+    while not stop.is_set():
+        with disk_lock:
+            if reserved_gb == 0 or local_free_gb() - reserved_gb - need_gb >= floor_gb:
+                reserved_gb += need_gb
+                return True
+        time.sleep(15)
+    return False
+
+
+def release_local_disk(need_gb: float) -> None:
+    global reserved_gb
+    with disk_lock:
+        reserved_gb -= need_gb
+
+
 def wait_for_pull_quota(reserve: int) -> None:
     with quota_lock:
         while (remaining := dockerhub_pulls_remaining()) is not None and remaining < reserve:
@@ -129,9 +160,10 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
     task_image = tagged(resolve_image_name(record["image_name"]))
     agent_image = agent_image_name(record["image_name"])
     started = time.time()
-    while local_free_gb() < args.min_local_free_gb and not stop.is_set():
-        time.sleep(15)  # wait for other workers to free their images
-    if stop.is_set():
+    # Peak local use while a task is in flight is about 3x its compressed size: Docker's unpacked
+    # copy plus the builder's own copy of the base layers.
+    need_gb = 3 * (task_image_gb(task_image) or 2.0)
+    if not reserve_local_disk(need_gb, args.min_local_free_gb, stop):
         return {"status": "skipped"}
     had_task_image = run(["docker", "image", "inspect", task_image]).returncode == 0
     wait_for_pull_quota(reserve=PULLS_PER_TASK * args.workers)
@@ -140,6 +172,7 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
         check(["docker", "buildx", "build", "--builder", BUILDER, "--platform", PLATFORM, "--load",
                "-q", "--build-arg", f"BASE_IMAGE={task_image}", "-t", agent_image, "-"],
               "build agent image", input=AGENT_DOCKERFILE)
+        prune_builder(args)  # the builder's copy of the base layers isn't needed for the upload
         verified = check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
                           "--entrypoint", "/bin/sh", agent_image, "-c", VERIFY_CMD], "offline check of agent image")
         stream_to_vm(ssh, [task_image, agent_image])
@@ -149,8 +182,12 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
     finally:
         to_remove = [agent_image] + ([] if had_task_image else [task_image])
         run(["docker", "rmi", "-f", *to_remove])
-        run(["docker", "buildx", "prune", "--builder", BUILDER, "-f",
-             "--max-used-space", f"{args.builder_cache_gb}gb"])
+        prune_builder(args)
+        release_local_disk(need_gb)
+
+
+def prune_builder(args) -> None:
+    run(["docker", "buildx", "prune", "--builder", BUILDER, "-f", "--max-used-space", f"{args.builder_cache_gb}gb"])
 
 
 def log(entry: dict) -> None:
@@ -167,7 +204,7 @@ def main():
     parser.add_argument("--smoke", type=int, nargs="?", const=1, default=None, help="Only the first N tasks.")
     parser.add_argument("--workers", type=int, default=2, help="Tasks in flight at once.")
     parser.add_argument("--min_local_free_gb", type=float, default=20,
-                        help="Hold new pulls while this machine has less free disk.")
+                        help="Free disk to keep on this machine, after what tasks in flight have reserved.")
     parser.add_argument("--min_vm_free_gb", type=float, default=40,
                         help="Stop once the VM's Docker disk has less free space.")
     parser.add_argument("--builder_cache_gb", type=float, default=8,

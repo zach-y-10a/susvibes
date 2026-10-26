@@ -37,6 +37,9 @@ fast-forwards the VM's checkout.
 | Model API host not allowed, wrong model ID, rejected parameter | `check_models.py` makes real 2-turn tool-call requests with each model's exact SWE-agent config | Gate 3 |
 | Provider rejects history without its reasoning blocks (SWE-agent drops them) | the same 2-turn check replays a tool call the way SWE-agent does | Gate 3 |
 | Eval or environment broken for some tasks | reference run: every task's `golden_patch` (the secure implementation) must pass func and sec | Gates 2, 5 |
+| Eval test commands need the network (tox/nox/poetry builds, tests calling out) | pilot = the 44 tasks whose test command isn't a direct runner; reference eval offline counts them; decision on PyPI access or dropping them before the full ship | Gate 4 |
+| Workstation disk peaks during large builds (builder holds its own copy of base layers) | each task reserves ~3x its compressed size before starting; builder pruned right after each build | Gate 5 |
+| A model leaves state behind that affects the next model | every model runs on a VM recreated from the golden snapshot | Phase 7 |
 
 ## Phases
 
@@ -82,6 +85,18 @@ reports 0 failed, 0 skipped (re-run to resume). Reference eval on all 186 on the
 **Gate 5:** 186/186 task + agent images on the VM; reference eval func and sec pass on all,
 or every exception explained (a task whose reference fails can't be scored for any model).
 
-### Phase 6 — model runs
-`run_suite.py --smoke --evaluate` across all models first, then the full suite in tmux.
-Re-running resumes. `scores.md` holds the table.
+### Phase 6 — golden snapshot
+Once Gate 5 passes and nothing else is running on the VM: stop the VM, snapshot its boot disk
+(`gcloud compute snapshots create susvibes-golden --source-disk susvibes --source-disk-zone
+us-central1-a`), start it again. This snapshot is the clean state every model run starts from.
+
+### Phase 7 — model runs, one clean VM each
+For each model (after a `run_suite.py --smoke --evaluate` pass across all models):
+1. Recreate the VM from `susvibes-golden`: delete the VM, create a boot disk from the snapshot,
+   create the VM on it with the same machine type, network (`benchmark-workers`) and zone. Nothing
+   a previous model did survives. The restored disk loads lazily, so the first reads of each image
+   are slower; results are unaffected.
+2. Put the API keys on the VM (`~/susvibes-work/keys.env`; not in the snapshot).
+3. Run that model's suite in tmux (`run_suite.py --models <label> --evaluate`); re-running resumes.
+4. Copy `runs/<run_id>/` and `logs/eval/<run_id>/` off over SSH, record the SusVibes commit
+   (`git rev-parse HEAD`) alongside them, and upload to Drive. Only then delete the VM.
