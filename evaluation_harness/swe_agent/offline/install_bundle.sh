@@ -17,7 +17,10 @@ log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 log "Debian packages"
 if ! command -v docker >/dev/null || ! command -v git >/dev/null; then
     # The bundle holds exactly what these packages need without recommends (build_bundle.sh).
-    sudo apt-get install -y -q --no-download --no-install-recommends "$BUNDLE"/debs/*.deb
+    # dpkg, not apt: apt tries the (unreachable) mirror for any version that is also in its index.
+    sudo apt-get install -s --no-install-recommends "$BUNDLE"/debs/*.deb | grep -q '^Inst' \
+        || { echo "Bundle .debs don't cover the install"; exit 1; }
+    sudo DEBIAN_FRONTEND=noninteractive dpkg -i "$BUNDLE"/debs/*.deb
 fi
 sudo systemctl enable --now docker
 id -nG "$USER" | grep -qw docker || sudo usermod -aG docker "$USER"
