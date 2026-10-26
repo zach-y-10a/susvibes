@@ -34,7 +34,8 @@ for env in sv sweagent1.1.0; do
         "$CONDA_DIR/envs/$env/bin/conda-unpack"
     fi
     # litellm otherwise fetches its price table from GitHub at import; use the copy it ships with.
-    "$CONDA" env config vars set -n "$env" LITELLM_LOCAL_MODEL_COST_MAP=True >/dev/null
+    # No registry access: the eval uses the task images ship_images.py loaded instead of pulling.
+    "$CONDA" env config vars set -n "$env" LITELLM_LOCAL_MODEL_COST_MAP=True SV_IMAGE_PULL=missing >/dev/null
 done
 
 log "Repositories under $WORK"

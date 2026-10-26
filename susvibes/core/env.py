@@ -65,6 +65,16 @@ class Deployment():
             resolved = resolve_image_name(image_name)
             if resolved != image_name and logger:
                 logger.info(f"Overriding image registry for {image_name} -> {resolved}.")
+            # Hosts without registry access (images loaded by evaluation_harness/swe_agent/ship_images.py)
+            # set SV_IMAGE_PULL=missing to use an image already present instead of re-pulling it.
+            if os.environ.get("SV_IMAGE_PULL", "always") == "missing":
+                try:
+                    image = docker_client.images.get(resolved)
+                    if logger:
+                        logger.info(f"Image {resolved} found locally; not pulling (SV_IMAGE_PULL=missing).")
+                    return image
+                except docker.errors.ImageNotFound:
+                    pass
             try:
                 for retry in range(max_retries):
                     try:

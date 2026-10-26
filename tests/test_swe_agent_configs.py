@@ -63,3 +63,42 @@ def test_write_model_config(tmp_path: Path) -> None:
     name = run_suite.write_model_config(entry, tmp_path)
     written = yaml.safe_load((tmp_path / "config" / f"{name}.yaml").read_text())
     assert written == {"agent": {"model": {"top_p": None, "api_base": "https://e", "api_key": "$K"}}}
+
+
+# ── Offline VM support: prebuilt agent images, local-image eval ─────────────────────────────
+
+
+def test_agent_image_name_drops_registry_and_tag() -> None:
+    import prebuilt
+
+    name = prebuilt.agent_image_name("registry.io/songwen6968/susvibes.x86_64.eval_foo_abc:latest")
+    assert name == f"susvibes-agent/susvibes.x86_64.eval_foo_abc:swerex-{prebuilt.SWEREX_VERSION}"
+    assert f"swe-rex=={prebuilt.SWEREX_VERSION}" in prebuilt.AGENT_DOCKERFILE
+
+
+def test_prebuilt_task_skips_build_and_pull(tmp_path: Path) -> None:
+    from susvibes.core.agents.sweagent import SWEAgentPort
+
+    port = SWEAgentPort("r", tmp_path, "env", ["c"], {"name": "m"}, 1, tmp_path)
+    port.add_task(repo_type="preexisting", problem_statement="p", instance_id="i", repo_name="project",
+                  image="susvibes-agent/x:y", python_standalone_dir=None, pull="never")
+    deployment = port.task_instances[0]["env"]["deployment"]
+    assert deployment["python_standalone_dir"] is None and deployment["pull"] == "never"
+
+
+def test_eval_uses_local_image_when_pull_is_missing(monkeypatch) -> None:
+    from unittest import mock
+
+    from susvibes.core import env
+    from susvibes.core.constants import ImageLoc
+
+    fake_client = mock.MagicMock()
+    monkeypatch.setattr(env, "docker_client", fake_client)
+    monkeypatch.setenv("SV_IMAGE_PULL", "missing")
+    image = env.Deployment.collect_image("ns/img:latest", image_loc=ImageLoc.REMOTE)
+    assert image is fake_client.images.get.return_value
+    fake_client.images.pull.assert_not_called()
+
+    monkeypatch.delenv("SV_IMAGE_PULL")
+    env.Deployment.collect_image("ns/img:latest", image_loc=ImageLoc.REMOTE)
+    fake_client.images.pull.assert_called_once()

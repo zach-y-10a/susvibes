@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,9 +40,12 @@ LOG_PATH = REPO_ROOT / "runs" / "ship_images.jsonl"
 DEFAULT_SSH = ("gcloud compute ssh susvibes --zone us-central1-a --project benchmark-temp-project "
                "--tunnel-through-iap --quiet --command")
 BUILDER = "susvibes-builder"
+ATTEMPTS = 3
+PULLS_PER_TASK = 2   # `docker pull` of the task image, and the builder's own pull of it
 PLATFORM = "linux/amd64"
 
 log_lock = threading.Lock()
+quota_lock = threading.Lock()
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -74,6 +78,27 @@ def local_free_gb() -> float:
 
 def tagged(image: str) -> str:
     return image if ":" in image.rsplit("/", 1)[-1] else f"{image}:latest"
+
+
+def dockerhub_pulls_remaining() -> int | None:
+    """Anonymous pulls left in this IP's Docker Hub window (a HEAD request, which doesn't count)."""
+    try:
+        token_url = ("https://auth.docker.io/token?service=registry.docker.io"
+                     "&scope=repository:ratelimitpreview/test:pull")
+        token = json.load(urllib.request.urlopen(token_url, timeout=20))["token"]
+        request = urllib.request.Request("https://registry-1.docker.io/v2/ratelimitpreview/test/manifests/latest",
+                                         method="HEAD", headers={"Authorization": f"Bearer {token}"})
+        header = urllib.request.urlopen(request, timeout=20).headers.get("ratelimit-remaining")
+        return int(header.split(";")[0]) if header else None
+    except Exception:
+        return None  # unknown: don't block on the check itself
+
+
+def wait_for_pull_quota(reserve: int) -> None:
+    with quota_lock:
+        while (remaining := dockerhub_pulls_remaining()) is not None and remaining < reserve:
+            print(f"Docker Hub: {remaining} pulls left this hour; waiting.", flush=True)
+            time.sleep(120)
 
 
 def ensure_builder() -> None:
@@ -109,6 +134,7 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
     if stop.is_set():
         return {"status": "skipped"}
     had_task_image = run(["docker", "image", "inspect", task_image]).returncode == 0
+    wait_for_pull_quota(reserve=PULLS_PER_TASK * args.workers)
     try:
         check(["docker", "pull", "-q", "--platform", PLATFORM, task_image], "pull task image")
         check(["docker", "buildx", "build", "--builder", BUILDER, "--platform", PLATFORM, "--load",
@@ -173,10 +199,17 @@ def main():
                 stop.set()
         if stop.is_set():
             return {"status": "skipped"}
-        try:
-            return ship_task(record, args, ssh, stop)
-        except Exception as exc:
-            return {"status": "failed", "error": str(exc)[:500]}
+        errors = []
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                result = ship_task(record, args, ssh, stop)
+                if result["status"] == "shipped":
+                    result.update(attempts=attempt, vm_free_gb=vm_free_gb(ssh))
+                return result
+            except Exception as exc:
+                errors.append(str(exc)[:300])
+                time.sleep(30 * attempt)
+        return {"status": "failed", "error": " || ".join(errors)}
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = {pool.submit(worker, record): record for record in todo}

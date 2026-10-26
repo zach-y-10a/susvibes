@@ -12,6 +12,12 @@ format. The dataset's `problem_statement` is used as-is.
 ## Files
 
 - **`run_infer.py`** - Runs SWE-agent over a dataset and writes `predictions.json`.
+- **`OFFLINE_RUNBOOK.md`** - Phased plan with verification gates for a VM without internet egress.
+- **`offline/`** - `build_bundle.sh` (workstation) and `install_bundle.sh` (VM): Docker, conda envs and repos without network on the VM; `sync_code.sh` ships later commits.
+- **`prebuilt.py`**, **`ship_images.py`** - Build each task's agent image ahead of time and stream task + agent images to the VM.
+- **`check_models.py`** - Two real API calls per model (tool call, then SWE-agent-style replay), run on the VM before any long run.
+- **`reference_predictions.py`** - Predictions from each task's golden patch, to validate the eval environment.
+- **`suite_config.py`** - Settings and model-suite helpers shared by the scripts above.
 - **`setup_vm.sh`** - One-shot, idempotent VM setup (Docker, conda envs, fork + patched SWE-agent, offline tests).
 - **`pull_images.py`** - Pre-pulls every task image, in parallel, stopping before the disk fills.
 - **`run_suite.py`** - Runs every model in `models.yaml` through `run_infer.py`, then scores them in one eval run.

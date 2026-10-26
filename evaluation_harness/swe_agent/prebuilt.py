@@ -6,8 +6,9 @@ tool bundle's install.sh, where edit_anthropic pip-installs tree-sitter. Both ne
 
 AGENT_DOCKERFILE does all of that ahead of time, on a machine with internet: it is swe-rex 1.4.0's
 own build (`DockerDeployment.glibc_dockerfile`) with swe-rex pinned to the host's version and
-installed in the builder stage, plus the tree-sitter packages installed the way install.sh will look
-for them at run time (in the session swe-rex opens: bash with /root/.bashrc sourced and PS1 set).
+installed in the builder stage and the libc6 refresh skipped on images without apt, plus the
+tree-sitter packages installed the way install.sh will look for them at run time (in the session
+swe-rex opens: bash with /root/.bashrc sourced and PS1 set).
 With the packages already present, install.sh's pip calls are no-ops that need no network.
 run_infer.py then points SWE-agent at the prebuilt image with `python_standalone_dir: null`,
 which skips the build step.
@@ -36,7 +37,8 @@ RUN ./configure --prefix=/root/python3.11 --enable-shared LDFLAGS='-Wl,-rpath=/r
 RUN /root/python3.11/bin/pip3 install --no-cache-dir swe-rex=={SWEREX_VERSION}
 
 FROM $BASE_IMAGE
-RUN apt-get update && apt-get install -y libc6 && rm -rf /var/lib/apt/lists/*
+RUN if command -v apt-get >/dev/null; then \\
+        apt-get update && apt-get install -y libc6 && rm -rf /var/lib/apt/lists/*; fi
 COPY --from=builder /root/python3.11 /root/python3.11
 ENV LD_LIBRARY_PATH=/root/python3.11/lib:${{LD_LIBRARY_PATH:-}}
 RUN ln -s /root/python3.11/bin/swerex-remote /usr/local/bin/swerex-remote && swerex-remote --version

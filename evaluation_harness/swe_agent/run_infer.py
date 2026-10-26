@@ -15,32 +15,13 @@ Usage:
 
 import argparse
 import json
-import shutil
 from pathlib import Path
 
 from prebuilt import agent_image_name
+from suite_config import install_configs, load_setting
 from susvibes.core.agents.sweagent import SWEAgentPort
 from susvibes.core.utils import load_file, save_file
 from susvibes.env_specs import WORKSPACE_DIR_NAME
-
-HARNESS_DIR = Path(__file__).parent
-SETTING_PATH = HARNESS_DIR / "setting.yaml"
-CONFIGS_DIR = HARNESS_DIR / "configs"
-REPO_ROOT = HARNESS_DIR.parent.parent
-
-
-def load_setting() -> dict:
-    """setting.yaml with `sweagent_dir` resolved against the SusVibes repo root."""
-    setting = load_file(SETTING_PATH)
-    setting["sweagent_dir"] = (REPO_ROOT / setting["sweagent_dir"]).resolve()
-    return setting
-
-
-def install_configs(sweagent_dir: Path) -> None:
-    """SWE-agent resolves `--config=config/<name>.yaml` against its own codebase, so the
-    SusVibes configs are copied in there before every batch."""
-    for config_path in CONFIGS_DIR.glob("*.yaml"):
-        shutil.copy(config_path, Path(sweagent_dir) / "config" / config_path.name)
 
 
 def run_infer(

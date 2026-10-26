@@ -20,7 +20,6 @@ Usage:
 """
 
 import argparse
-import copy
 import json
 import subprocess
 import sys
@@ -30,59 +29,17 @@ from pathlib import Path
 HARNESS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS_DIR))
 
-from run_infer import REPO_ROOT, install_configs, load_setting, run_infer  # noqa: E402
+from run_infer import run_infer  # noqa: E402
+from suite_config import (  # noqa: E402
+    MODELS_PATH, REPO_ROOT, config_names_for, deep_merge, install_configs, load_models, load_setting,
+    write_model_config,
+)
 from susvibes.core.constants import EVAL_LOG_DIR, LOG_SUMMARY  # noqa: E402
 from susvibes.core.utils import load_file, save_file  # noqa: E402
 
-MODELS_PATH = HARNESS_DIR / "models.yaml"
 DEFAULT_DATASET = REPO_ROOT / "datasets" / "default" / "susvibes_dataset.jsonl"
 RUNS_DIR = REPO_ROOT / "runs"
-MODEL_CONFIG_SUBDIR = "susvibes_models"
 STRATEGY = "none"
-
-
-def deep_merge(base: dict, override: dict) -> dict:
-    merged = copy.deepcopy(base)
-    for key, value in override.items():
-        if isinstance(value, dict) and isinstance(merged.get(key), dict):
-            merged[key] = deep_merge(merged[key], value)
-        else:
-            merged[key] = copy.deepcopy(value)
-    return merged
-
-
-def load_models(models_path: Path, labels: list = None) -> list[dict]:
-    spec = load_file(models_path)
-    defaults = spec.get("defaults", {})
-    models = [deep_merge(defaults, entry) for entry in spec["models"]]
-    seen = set()
-    for entry in models:
-        assert entry["label"] not in seen, f"Duplicate label {entry['label']!r} in {models_path}."
-        assert "/" not in entry["label"], f"Label {entry['label']!r} must not contain '/'."
-        seen.add(entry["label"])
-    if labels is not None:
-        unknown = set(labels) - seen
-        assert not unknown, f"Unknown model labels: {sorted(unknown)}."
-        models = [entry for entry in models if entry["label"] in set(labels)]
-    return models
-
-
-def write_model_config(entry: dict, sweagent_dir: Path) -> str:
-    """Write the per-model SWE-agent config and return its config name."""
-    model_config = dict(entry.get("agent_model", {}))
-    for key in ("api_base", "api_key"):
-        if entry.get(key):
-            model_config[key] = entry[key]
-    config_name = f"{MODEL_CONFIG_SUBDIR}/{entry['label']}"
-    config_path = Path(sweagent_dir) / "config" / f"{config_name}.yaml"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    save_file({"agent": {"model": model_config}}, config_path)
-    return config_name
-
-
-def config_names_for(entry: dict, base_names: list, model_config_name: str) -> list[str]:
-    names = [name for name in base_names if not (entry.get("cache") and name == "no_cache")]
-    return names + [model_config_name]
 
 
 def collect_predictions(entry: dict, agent_output_dir: Path, model_dir: Path) -> list[dict]:

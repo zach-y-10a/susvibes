@@ -23,12 +23,12 @@ PLATFORM="linux/amd64"
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 mkdir -p "$OUT/debs" "$OUT/envs" "$OUT/repos"
 
-log "Debian packages (docker.io, iptables, git) resolved against the VM's dpkg status"
+log "Debian packages (docker.io, iptables, git, tmux) resolved against the VM's dpkg status"
 docker run --rm --platform "$PLATFORM" -v "$OUT/debs:/out" -v "$STATUS:/vm-status:ro" "$DEBIAN_IMAGE" bash -euc '
     apt-get update -q
     apt-get install -y -q --download-only --no-install-recommends \
         -o Dir::State::status=/vm-status -o Dir::Cache::archives=/out \
-        docker.io iptables git
+        docker.io iptables git tmux
     rm -rf /out/partial /out/lock'
 ls "$OUT/debs" | wc -l | xargs echo "debs:"
 
@@ -39,13 +39,17 @@ log "Miniforge installer"
 log "Conda envs (sv, sweagent1.1.0), packed with conda-pack"
 docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     -v "$SUSVIBES:/src/susvibes:ro" -v "$SWEAGENT:/src/SWE-agent:ro" "$CONDA_IMAGE" bash -euc '
+    # requirements.txt pins psutil==5.9.0, which has no cp311 wheel and builds from source.
+    apt-get update -q && apt-get install -y -q gcc >/dev/null
     conda install -y -q -n base conda-pack
     conda create -y -q -n sv python=3.11
     conda run -n sv pip install -q -r /src/susvibes/requirements.txt pytest setuptools wheel
     conda create -y -q -n sweagent1.1.0 python=3.11
     # SWE-agent itself is installed editable on the VM; here only its dependencies.
     conda run -n sweagent1.1.0 pip install -q setuptools wheel
-    conda run -n sweagent1.1.0 pip install -q /src/SWE-agent
+    # Built from a writable copy: pip writes egg-info into the source tree.
+    mkdir -p /tmp/swe && tar -C /src/SWE-agent --exclude=.venv --exclude=.git -cf - . | tar -C /tmp/swe -xf -
+    conda run -n sweagent1.1.0 pip install -q /tmp/swe
     conda run -n sweagent1.1.0 pip uninstall -q -y sweagent
     for env in sv sweagent1.1.0; do
         conda pack -q -n "$env" -o "/out/$env.tar.gz" --force
