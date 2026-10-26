@@ -37,11 +37,13 @@ CONDA="$CONDA_DIR/bin/conda"
 log "Conda envs"
 for env in sv sweagent1.1.0; do
     prefix="$CONDA_DIR/envs/$env"
-    if [ ! -f "$prefix/.susvibes-unpacked" ]; then
+    # The marker holds the checksum of the tarball unpacked, so a rebuilt bundle replaces the env.
+    sum="$(sha256sum "$BUNDLE/envs/$env.tar.gz" | cut -d" " -f1)"
+    if [ "$(cat "$prefix/.susvibes-unpacked" 2>/dev/null)" != "$sum" ]; then
         rm -rf "$prefix" && mkdir -p "$prefix"
         tar -xzf "$BUNDLE/envs/$env.tar.gz" -C "$prefix"
         "$prefix/bin/python" "$prefix/bin/conda-unpack"  # its shebang wants `python` on PATH
-        touch "$prefix/.susvibes-unpacked"
+        echo "$sum" > "$prefix/.susvibes-unpacked"
     fi
     # litellm otherwise fetches its price table from GitHub at import; use the copy it ships with.
     # No registry access: the eval uses the task images ship_images.py loaded instead of pulling.
