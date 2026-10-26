@@ -23,12 +23,12 @@ PLATFORM="linux/amd64"
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 mkdir -p "$OUT/debs" "$OUT/envs" "$OUT/repos"
 
-log "Debian packages (docker.io, iptables, git, tmux) resolved against the VM's dpkg status"
+log "Debian packages (docker.io, docker-cli, iptables, git, tmux) resolved against the VM's dpkg status"
 docker run --rm --platform "$PLATFORM" -v "$OUT/debs:/out" -v "$STATUS:/vm-status:ro" "$DEBIAN_IMAGE" bash -euc '
     apt-get update -q
     apt-get install -y -q --download-only --no-install-recommends \
         -o Dir::State::status=/vm-status -o Dir::Cache::archives=/out \
-        docker.io iptables git tmux
+        docker.io docker-cli iptables git tmux
     rm -rf /out/partial /out/lock'
 ls "$OUT/debs" | wc -l | xargs echo "debs:"
 
@@ -37,6 +37,9 @@ log "Miniforge installer"
     "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh"
 
 log "Conda envs (sv, sweagent1.1.0), packed with conda-pack"
+if [ -f "$OUT/envs/sv.tar.gz" ] && [ -f "$OUT/envs/sweagent1.1.0.tar.gz" ]; then
+    echo "Already built; delete $OUT/envs to rebuild."
+else
 docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     -v "$SUSVIBES:/src/susvibes:ro" -v "$SWEAGENT:/src/SWE-agent:ro" "$CONDA_IMAGE" bash -euc '
     # requirements.txt pins psutil==5.9.0, which has no cp311 wheel and builds from source.
@@ -55,6 +58,7 @@ docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
         # requirements.txt pins pip/setuptools/wheel, so pip replaces the conda copies; pack what pip installed.
         conda-pack -q -n "$env" -o "/out/$env.tar.gz" --force --ignore-missing-files
     done'
+fi
 
 log "Repositories"
 git -C "$SUSVIBES" bundle create "$OUT/repos/susvibes.bundle" "$BRANCH"
