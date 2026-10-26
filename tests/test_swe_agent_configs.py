@@ -110,3 +110,23 @@ def test_baked_tool_install_matches_patch() -> None:
     patch = (SWE_AGENT_DIR / "patches" / "sweagent-v1.1.0-edit-tool-install.patch").read_text()
     added = [line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")]
     assert "\n".join(added) + "\n" == prebuilt.TOOL_INSTALL_SCRIPT
+
+
+def test_eval_threadpool_records_internal_errors(monkeypatch) -> None:
+    from susvibes.eval import task
+
+    handler = task.TasksHandler.__new__(task.TasksHandler)
+    handler.dataset = [{"instance_id": "a"}, {"instance_id": "b"}]
+    handler.reports = {}
+
+    def fake_single(prediction, record, force, resume):
+        if record["instance_id"] == "a":
+            raise RuntimeError("Failed to handle test logs: No executed test counts found in logs")
+        return {"eval_status": task.EvalStatus.TESTED, "run": {}, "error": None}
+
+    monkeypatch.setattr(handler, "run_evaluation_single", fake_single, raising=False)
+    monkeypatch.setattr(handler, "_model_key", lambda prediction: "m", raising=False)
+    predictions = [{"instance_id": i, "model_name_or_path": "m", "model_patch": "x"} for i in ("a", "b")]
+    handler.run_evaluation_threadpool(predictions, max_workers=2)
+    assert handler.reports["m"]["a"]["error"].startswith("Internal error")
+    assert handler.reports["m"]["b"]["eval_status"] == task.EvalStatus.TESTED

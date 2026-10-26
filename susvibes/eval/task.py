@@ -180,8 +180,13 @@ class Task:
                 error_msg = str(e)
                 run[run_name] = {}
                 continue
-            test_pf = self.env.handle_test_logs(test_logs, timed_out, logger,
-                kind=Route.route_logs_kind(self.flags, run_name))
+            try:
+                test_pf = self.env.handle_test_logs(test_logs, timed_out, logger,
+                    kind=Route.route_logs_kind(self.flags, run_name))
+            except RuntimeError as e:   # unparsable test logs: this instance errors, the run goes on
+                error_msg = str(e)
+                run[run_name] = {}
+                continue
             if not test_pf.completed():
                 run[run_name] = {"pass": False, "test_status": test_pf.status}
                 continue
@@ -291,7 +296,10 @@ class TasksHandler:
                     try:
                         report = future.result()
                     except Exception as e:
-                        raise RuntimeError(f"Internal error for {instance_id}: {e}")
+                        # Record the failure as this instance's error (re-run by --resume) rather
+                        # than abandoning every instance still in flight.
+                        logging.getLogger(__name__).error(f"Internal error for {instance_id}: {e}")
+                        report = {"eval_status": None, "run": {}, "error": f"Internal error: {e}"}
                     model = self._model_key(pred_by_id[instance_id])
                     self.reports.setdefault(model, {})[instance_id] = report
                     pbar.update(1)
