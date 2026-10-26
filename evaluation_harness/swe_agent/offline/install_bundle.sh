@@ -15,15 +15,19 @@ PATCH_REL="evaluation_harness/swe_agent/patches/sweagent-v1.1.0-optional-samplin
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
 log "Debian packages"
-if ! command -v docker >/dev/null || ! command -v git >/dev/null; then
+if [ -n "${SV_SKIP_SYSTEM:-}" ]; then
+    echo "SV_SKIP_SYSTEM set (local rehearsal): skipping Debian packages and Docker."
+elif ! command -v docker >/dev/null || ! command -v git >/dev/null; then
     # The bundle holds exactly what these packages need without recommends (build_bundle.sh).
     # dpkg, not apt: apt tries the (unreachable) mirror for any version that is also in its index.
     sudo apt-get install -s --no-install-recommends "$BUNDLE"/debs/*.deb | grep -q '^Inst' \
         || { echo "Bundle .debs don't cover the install"; exit 1; }
     sudo DEBIAN_FRONTEND=noninteractive dpkg -i "$BUNDLE"/debs/*.deb
 fi
-sudo systemctl enable --now docker
-id -nG "$USER" | grep -qw docker || sudo usermod -aG docker "$USER"
+if [ -z "${SV_SKIP_SYSTEM:-}" ]; then
+    sudo systemctl enable --now docker
+    id -nG "$USER" | grep -qw docker || sudo usermod -aG docker "$USER"
+fi
 
 log "Miniforge"
 [ -x "$CONDA_DIR/bin/conda" ] || bash "$BUNDLE/Miniforge3-Linux-x86_64.sh" -b -p "$CONDA_DIR"
@@ -68,5 +72,4 @@ log "Offline tests"
 (cd "$WORK/susvibes" && "$CONDA" run -n sv python -m pytest -q tests)
 
 log "Done"
-docker --version
-df -h "$(sudo docker info -f '{{.DockerRootDir}}')" | tail -1
+[ -n "${SV_SKIP_SYSTEM:-}" ] || { docker --version; df -h "$(sudo docker info -f '{{.DockerRootDir}}')" | tail -1; }

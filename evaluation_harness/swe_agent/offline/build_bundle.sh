@@ -45,18 +45,19 @@ docker run --rm --platform "$PLATFORM" -v "$OUT/envs:/out" \
     # requirements.txt pins psutil==5.9.0, which has no cp311 wheel and builds from source.
     apt-get update -q && apt-get install -y -q gcc >/dev/null
     conda install -y -q -n base conda-pack
-    conda create -y -q -n sv python=3.11
-    conda run -n sv pip install -q -r /src/susvibes/requirements.txt pytest setuptools wheel
-    conda create -y -q -n sweagent1.1.0 python=3.11
+    # pip/setuptools/wheel come from conda at the versions requirements.txt pins, so pip never
+    # replaces conda-managed files (conda-pack refuses, rightly, to pack an env where it did).
+    pins="$(grep -E "^(pip|setuptools|wheel)==" /src/susvibes/requirements.txt | sed "s/==/=/" | tr "\n" " ")"
+    conda create -y -q -n sv python=3.11 $pins
+    conda run -n sv pip install -q -r /src/susvibes/requirements.txt pytest
+    conda create -y -q -n sweagent1.1.0 python=3.11 setuptools wheel
     # SWE-agent itself is installed editable on the VM; here only its dependencies.
-    conda run -n sweagent1.1.0 pip install -q setuptools wheel
     # Built from a writable copy: pip writes egg-info into the source tree.
     mkdir -p /tmp/swe && tar -C /src/SWE-agent --exclude=.venv --exclude=.git -cf - . | tar -C /tmp/swe -xf -
     conda run -n sweagent1.1.0 pip install -q /tmp/swe
     conda run -n sweagent1.1.0 pip uninstall -q -y sweagent
     for env in sv sweagent1.1.0; do
-        # requirements.txt pins pip/setuptools/wheel, so pip replaces the conda copies; pack what pip installed.
-        conda-pack -q -n "$env" -o "/out/$env.tar.gz" --force --ignore-missing-files
+        conda-pack -q -n "$env" -o "/out/$env.tar.gz" --force
     done'
 fi
 
