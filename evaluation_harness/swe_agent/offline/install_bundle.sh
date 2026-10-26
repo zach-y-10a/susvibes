@@ -10,7 +10,7 @@ set -euo pipefail
 BUNDLE="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")}" && pwd)"
 WORK="${WORK:-$HOME/susvibes-work}"
 CONDA_DIR="${CONDA_DIR:-$HOME/miniforge3}"
-PATCH_REL="evaluation_harness/swe_agent/patches/sweagent-v1.1.0-optional-sampling.patch"
+PATCHES_REL="evaluation_harness/swe_agent/patches"
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
@@ -61,9 +61,15 @@ fi
 if [ ! -d "$WORK/SWE-agent" ]; then
     mkdir -p "$WORK/SWE-agent"
     tar -xzf "$BUNDLE/repos/SWE-agent-v1.1.0.tar.gz" -C "$WORK/SWE-agent"
-    (cd "$WORK/SWE-agent" && git apply "$WORK/susvibes/$PATCH_REL")  # not a git repo; applies like patch -p1
 fi
-grep -q 'top_p = "None"' "$WORK/SWE-agent/sweagent/agent/models.py" || { echo "SWE-agent patch missing"; exit 1; }
+# Not a git repo, so git apply works like patch -p1; --reverse --check detects one already applied.
+for patch in "$WORK/susvibes/$PATCHES_REL"/*.patch; do
+    if (cd "$WORK/SWE-agent" && git apply --reverse --check "$patch" 2>/dev/null); then
+        echo "already applied: $(basename "$patch")"
+    else
+        (cd "$WORK/SWE-agent" && git apply "$patch") && echo "applied: $(basename "$patch")"
+    fi
+done
 
 log "Editable installs (offline)"
 "$CONDA" run -n sv pip install -q --no-index --no-deps --no-build-isolation -e "$WORK/susvibes"

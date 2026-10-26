@@ -7,7 +7,7 @@
 #
 # Layout it creates (setting.yaml expects SWE-agent next to the SusVibes repo):
 #   $WORK/susvibes   fork, branch $BRANCH        conda env: sv
-#   $WORK/SWE-agent  v1.1.0 + sampling patch     conda env: sweagent1.1.0
+#   $WORK/SWE-agent  v1.1.0 + patches/           conda env: sweagent1.1.0
 set -euo pipefail
 
 WORK="${WORK:-$HOME/susvibes-work}"
@@ -15,7 +15,7 @@ FORK_URL="${FORK_URL:-https://github.com/zach-y-10a/susvibes.git}"
 BRANCH="${BRANCH:-swe-agent-multi-model}"
 SWEAGENT_TAG="v1.1.0"
 CONDA_DIR="${CONDA_DIR:-$HOME/miniforge3}"
-PATCH_REL="evaluation_harness/swe_agent/patches/sweagent-v1.1.0-optional-sampling.patch"
+PATCHES_REL="evaluation_harness/swe_agent/patches"
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
@@ -51,12 +51,13 @@ if [ ! -d "$WORK/SWE-agent/.git" ]; then
     git -c advice.detachedHead=false clone --depth 1 --branch "$SWEAGENT_TAG" \
         https://github.com/SWE-agent/SWE-agent.git "$WORK/SWE-agent"
 fi
-patch="$WORK/susvibes/$PATCH_REL"
-if git -C "$WORK/SWE-agent" apply --reverse --check "$patch" 2>/dev/null; then
-    echo "SWE-agent patch already applied."
-else
-    git -C "$WORK/SWE-agent" apply "$patch"
-fi
+for patch in "$WORK/susvibes/$PATCHES_REL"/*.patch; do
+    if git -C "$WORK/SWE-agent" apply --reverse --check "$patch" 2>/dev/null; then
+        echo "already applied: $(basename "$patch")"
+    else
+        git -C "$WORK/SWE-agent" apply "$patch"
+    fi
+done
 
 log "Conda env: sv (SusVibes harness + eval)"
 "$CONDA" env list | grep -qE '^sv\s' || "$CONDA" create -y -q -n sv python=3.11

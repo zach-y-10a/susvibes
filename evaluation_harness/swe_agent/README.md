@@ -24,7 +24,7 @@ format. The dataset's `problem_statement` is used as-is.
 - **`models.yaml`** - The model suite: litellm model string, endpoint, sampling and provider kwargs per model.
 - **`setting.yaml`** - Run configuration (SWE-agent config(s), conda env, workers, model limits).
 - **`configs/`** - SWE-agent configs: `susvibes_eval` (SWE-agent's default config with the canonical SusVibes prompt) and `no_cache` (drops Anthropic `cache_control` marks). Copied into SWE-agent's `config/` before each batch.
-- **`patches/`** - Backport for SWE-agent v1.1.0 letting `temperature`/`top_p` be `null` (not sent), which models that reject sampling parameters need.
+- **`patches/`** - SWE-agent v1.1.0 patches: `optional-sampling` lets `temperature`/`top_p` be `null` (not sent), which models that reject sampling parameters need; `edit-tool-install` keeps the editor tool's tree-sitter install from aborting tasks it can't install on (Python < 3.8 environments) and from needing the network when already installed.
 - **`expert_instances.yaml`** - Example of the SWE-agent instances file `run_infer.py` builds.
 - **`convert.py`** - Converts SWE-agent `.traj` output into the standard format (OpenAI messages).
 
@@ -37,7 +37,7 @@ patch, and install it into the conda env named in `setting.yaml`:
 
 ```bash
 git clone --branch v1.1.0 https://github.com/SWE-agent/SWE-agent.git ../SWE-agent
-git -C ../SWE-agent apply "$PWD/evaluation_harness/swe_agent/patches/sweagent-v1.1.0-optional-sampling.patch"
+for p in evaluation_harness/swe_agent/patches/*.patch; do git -C ../SWE-agent apply "$PWD/$p"; done
 conda create -n sweagent1.1.0 python=3.11 -y
 conda run -n sweagent1.1.0 pip install -e ../SWE-agent
 ```

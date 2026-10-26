@@ -102,3 +102,11 @@ def test_eval_uses_local_image_when_pull_is_missing(monkeypatch) -> None:
     monkeypatch.delenv("SV_IMAGE_PULL")
     env.Deployment.collect_image("ns/img:latest", image_loc=ImageLoc.REMOTE)
     fake_client.images.pull.assert_called_once()
+
+
+def test_baked_tool_install_matches_patch() -> None:
+    import prebuilt
+
+    patch = (SWE_AGENT_DIR / "patches" / "sweagent-v1.1.0-edit-tool-install.patch").read_text()
+    added = [line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++")]
+    assert "\n".join(added) + "\n" == prebuilt.TOOL_INSTALL_SCRIPT

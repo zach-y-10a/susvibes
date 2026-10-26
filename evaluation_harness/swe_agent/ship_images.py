@@ -140,10 +140,12 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
         check(["docker", "buildx", "build", "--builder", BUILDER, "--platform", PLATFORM, "--load",
                "-q", "--build-arg", f"BASE_IMAGE={task_image}", "-t", agent_image, "-"],
               "build agent image", input=AGENT_DOCKERFILE)
-        check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
-               "--entrypoint", "/bin/sh", agent_image, "-c", VERIFY_CMD], "offline check of agent image")
+        verified = check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
+                          "--entrypoint", "/bin/sh", agent_image, "-c", VERIFY_CMD], "offline check of agent image")
         stream_to_vm(ssh, [task_image, agent_image])
-        return {"status": "shipped", "seconds": round(time.time() - started)}
+        # e.g. "python=3.7.17 filemap=no": tasks without the filemap view are worth knowing about.
+        env_info = verified.strip().splitlines()[-1] if verified.strip() else ""
+        return {"status": "shipped", "seconds": round(time.time() - started), "env": env_info}
     finally:
         to_remove = [agent_image] + ([] if had_task_image else [task_image])
         run(["docker", "rmi", "-f", *to_remove])
@@ -218,7 +220,7 @@ def main():
             counts[result["status"]] += 1
             log({"time": datetime.now(timezone.utc).isoformat(), "instance_id": record["instance_id"], **result})
             if result["status"] != "skipped":
-                detail = result.get("error") or f"{result.get('seconds')} s"
+                detail = result.get("error") or f"{result.get('seconds')} s, {result.get('env')}"
                 print(f"[{done}/{len(todo)}] {result['status']:7s} {record['instance_id']}  ({detail})", flush=True)
 
     print(f"\nShipped {counts['shipped']}, failed {counts['failed']}, skipped {counts['skipped']}. "

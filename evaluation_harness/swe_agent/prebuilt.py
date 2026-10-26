@@ -7,21 +7,41 @@ tool bundle's install.sh, where edit_anthropic pip-installs tree-sitter. Both ne
 AGENT_DOCKERFILE does all of that ahead of time, on a machine with internet: it is swe-rex 1.4.0's
 own build (`DockerDeployment.glibc_dockerfile`) with swe-rex pinned to the host's version and
 installed in the builder stage and the libc6 refresh skipped on images without apt, plus the
-tree-sitter packages installed the way install.sh will look for them at run time (in the session
-swe-rex opens: bash with /root/.bashrc sourced and PS1 set).
-With the packages already present, install.sh's pip calls are no-ops that need no network.
+patched install.sh run the way SWE-agent will run it (in the session swe-rex opens: bash with
+/root/.bashrc sourced and PS1 set). At run time install.sh then finds tree-sitter installed and
+needs no network. On Python < 3.8, where tree-sitter can't install, it skips instead of aborting.
 run_infer.py then points SWE-agent at the prebuilt image with `python_standalone_dir: null`,
 which skips the build step.
 """
 
+import base64
+
 SWEREX_VERSION = "1.4.0"
 AGENT_IMAGE_PREFIX = "susvibes-agent"
 
-# Same commands, in the same environment, that SWE-agent's edit_anthropic/install.sh runs.
-TOOL_INSTALL_CMD = (
-    "export PS1=x; source /root/.bashrc >/dev/null 2>&1; "
-    "pip install 'tree-sitter==0.21.3' && pip install 'tree-sitter-languages'"
-)
+# SWE-agent's edit_anthropic/install.sh as patched by patches/sweagent-v1.1.0-edit-tool-install.patch
+# (tests/test_swe_agent_configs.py keeps the two identical). Baked into the image, then rerun by
+# SWE-agent at every container start, where it finds tree-sitter installed and does nothing.
+TOOL_INSTALL_SCRIPT = """\
+# SusVibes: tree-sitter only powers the filemap view of large .py files (str_replace_editor falls
+# back to truncated output without it), so a missing install must not abort the run. Skip it when
+# already importable (prebuilt images, no network needed) or impossible (0.21.3 needs Python >= 3.8);
+# install with `python3 -m pip` so it lands in the interpreter the tool runs under.
+if python3 -c "import tree_sitter, tree_sitter_languages" 2>/dev/null; then
+    :
+elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
+    python3 -m pip install 'tree-sitter==0.21.3' && python3 -m pip install 'tree-sitter-languages' \\
+        || echo "tree-sitter install failed; filemap view disabled."
+else
+    echo "Python < 3.8: tree-sitter unavailable; filemap view disabled."
+fi
+"""
+_SCRIPT_B64 = base64.b64encode(TOOL_INSTALL_SCRIPT.encode()).decode()
+
+# The environment SWE-agent's session runs install.sh in: bash with /root/.bashrc sourced, PS1 set.
+_IN_SESSION = "export PS1=x; source /root/.bashrc >/dev/null 2>&1; "
+_RUN_TOOL_INSTALL = (f"echo {_SCRIPT_B64} | base64 -d > /tmp/susvibes-tool-install.sh && "
+                     f"bash -c '{_IN_SESSION}source /tmp/susvibes-tool-install.sh'")
 
 AGENT_DOCKERFILE = f"""\
 ARG BASE_IMAGE
@@ -42,11 +62,19 @@ RUN if command -v apt-get >/dev/null; then \\
 COPY --from=builder /root/python3.11 /root/python3.11
 ENV LD_LIBRARY_PATH=/root/python3.11/lib:${{LD_LIBRARY_PATH:-}}
 RUN ln -s /root/python3.11/bin/swerex-remote /usr/local/bin/swerex-remote && swerex-remote --version
-RUN bash -c "{TOOL_INSTALL_CMD}"
+RUN {_RUN_TOOL_INSTALL} && rm /tmp/susvibes-tool-install.sh
 """
 
-# Run with `--network none`: proves the image starts swe-rex and passes install.sh offline.
-VERIFY_CMD = f'swerex-remote --version && bash -c "{TOOL_INSTALL_CMD}"'
+# Run with `--network none`. Proves swe-rex starts and install.sh completes offline; on Python >= 3.8
+# tree-sitter must import (else install.sh would try PyPI at every start). Prints the session's
+# Python version and whether the filemap view is available, for the ship log.
+VERIFY_CMD = (
+    f"swerex-remote --version >/dev/null && {_RUN_TOOL_INSTALL} >/dev/null && bash -c '{_IN_SESSION}"
+    'v=$(python3 -c "import sys; print(sys.version.split()[0])"); '
+    'if python3 -c "import tree_sitter, tree_sitter_languages" 2>/dev/null; then f=yes; '
+    'elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"; then echo "tree-sitter missing"; exit 1; '
+    "else f=no; fi; echo python=$v filemap=$f'"
+)
 
 
 def agent_image_name(image_name: str) -> str:
