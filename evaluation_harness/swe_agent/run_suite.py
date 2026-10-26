@@ -10,7 +10,7 @@ under runs/<run_id>/:
     ├── <label>/predictions.jsonl  # model_name_or_path rewritten to <label>
     ├── <label>/infer_status.json  # SWE-agent cost and exit statuses, or the error that stopped it
     ├── predictions.jsonl          # all models combined, the eval input
-    └── scores.md                  # FuncPass / SecPass table
+    └── scores.md                  # FuncPass / SecPass table, from every per-instance report
 
 Usage:
     python evaluation_harness/swe_agent/run_suite.py --run_id suite1 --smoke      # 1 instance/model
@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import traceback
@@ -34,7 +35,7 @@ from suite_config import (  # noqa: E402
     MODELS_PATH, REPO_ROOT, config_names_for, deep_merge, install_configs, load_models, load_setting,
     write_model_config,
 )
-from susvibes.core.constants import EVAL_LOG_DIR, LOG_SUMMARY  # noqa: E402
+from susvibes.core.constants import EVAL_LOG_DIR  # noqa: E402
 from susvibes.core.utils import load_file, save_file  # noqa: E402
 
 DEFAULT_DATASET = REPO_ROOT / "datasets" / "default" / "susvibes_dataset.jsonl"
@@ -126,27 +127,55 @@ def evaluate(args, predictions_path: Path) -> None:
     ]
     if args.instance_ids is not None:
         cmd += ["--instance_ids", json.dumps(args.instance_ids)]
+    env = dict(os.environ)
+    if load_setting().get("prebuilt_agent_images"):
+        # Prebuilt images mean the task images were loaded ahead of time (ship_images.py); use them
+        # rather than pulling, even when this wasn't launched through `conda run -n sv`.
+        env.setdefault("SV_IMAGE_PULL", "missing")
     print("Running:", " ".join(cmd))
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True)
+    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env)
+
+
+def score_model(label: str, run_id: str, instance_ids: list[str]) -> dict:
+    """Scores from every per-instance report.json of this run, over all of `instance_ids`.
+
+    Reads the reports rather than the eval's summary.json, which covers only the instances of the
+    latest eval invocation (a resume of a few instances would otherwise shrink the denominator).
+    Missing or errored instances count as failures, as in the eval's own scoring."""
+    counts = {"tested": 0, "empty_patch": 0, "patch_error": 0, "errored": 0, "missing": 0, "func": 0, "sec": 0}
+    for instance_id in instance_ids:
+        report_path = EVAL_LOG_DIR / run_id / STRATEGY / label / instance_id / "report.json"
+        if not report_path.exists():
+            counts["missing"] += 1
+            continue
+        report = load_file(report_path)
+        if report.get("error"):
+            counts["errored"] += 1
+            continue
+        status = report.get("eval_status")
+        counts[status] = counts.get(status, 0) + 1
+        run = report.get("run", {})
+        if status == "tested" and run.get("func", {}).get("pass"):
+            counts["func"] += 1
+            if run.get("sec", {}).get("pass"):
+                counts["sec"] += 1
+    counts["n"] = len(instance_ids)
+    return counts
 
 
 def write_scores(args, models: list[dict], run_dir: Path) -> None:
-    rows = ["| Model | FuncPass | SecPass | Submitted | Empty | Patch errors | Indeterminate | Agent cost ($) |",
-            "|---|---|---|---|---|---|---|---|"]
+    instance_ids = args.instance_ids or [record["instance_id"] for record in load_file(args.dataset_path)]
+    rows = ["| Model | FuncPass | SecPass | Tested | Empty | Patch errors | Errored | No report | Agent cost ($) |",
+            "|---|---|---|---|---|---|---|---|---|"]
     for entry in models:
         label = entry["label"]
-        summary_path = EVAL_LOG_DIR / args.run_id / STRATEGY / label / LOG_SUMMARY
         status_path = run_dir / label / "infer_status.json"
         cost = (load_file(status_path).get("total_cost") if status_path.exists() else None)
         cost = "—" if cost in (None, 0) else f"{cost:.2f}"
-        if not summary_path.exists():
-            rows.append(f"| {label} | — | — | — | — | — | — | {cost} |")
-            continue
-        s = load_file(summary_path)
+        c = score_model(label, args.run_id, instance_ids)
         rows.append(
-            f"| {label} | {s['func_pass']:.1%} | {s['sec_pass']:.1%} | "
-            f"{s['num_submitted']}/{s['num_candidates']} | {s['num_empty_model_patch']} | "
-            f"{s['num_model_patch_errors']} | {s['num_indeterminate']} | {cost} |"
+            f"| {label} | {c['func'] / c['n']:.1%} | {c['sec'] / c['n']:.1%} | {c['tested']}/{c['n']} | "
+            f"{c['empty_patch']} | {c['patch_error']} | {c['errored']} | {c['missing']} | {cost} |"
         )
     table = "\n".join(rows) + "\n"
     (run_dir / "scores.md").write_text(table)

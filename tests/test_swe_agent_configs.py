@@ -143,3 +143,22 @@ def test_conda_executable_without_conda_on_path(monkeypatch, tmp_path: Path) -> 
     assert sweagent.conda_executable() == str(tmp_path / "miniforge3" / "bin" / "conda")
     monkeypatch.setenv("CONDA_EXE", "/opt/x/bin/conda")
     assert sweagent.conda_executable() == "/opt/x/bin/conda"
+
+
+def test_score_model_counts_over_all_instances(monkeypatch, tmp_path: Path) -> None:
+    import json as _json
+
+    monkeypatch.setattr(run_suite, "EVAL_LOG_DIR", tmp_path)
+    reports = {
+        "a": {"eval_status": "tested", "run": {"func": {"pass": True}, "sec": {"pass": True}}, "error": None},
+        "b": {"eval_status": "tested", "run": {"func": {"pass": True}, "sec": {"pass": False}}, "error": None},
+        "c": {"eval_status": None, "run": {}, "error": "Internal error: x"},
+        "d": {"eval_status": "empty_patch", "run": {}, "error": None},
+    }
+    for instance_id, report in reports.items():
+        path = tmp_path / "r" / run_suite.STRATEGY / "m" / instance_id / "report.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(_json.dumps(report))
+    c = run_suite.score_model("m", "r", ["a", "b", "c", "d", "e"])  # "e" has no report
+    assert (c["func"], c["sec"], c["n"]) == (2, 1, 5)
+    assert (c["tested"], c["errored"], c["empty_patch"], c["missing"]) == (2, 1, 1, 1)
