@@ -31,7 +31,7 @@ from pathlib import Path
 HARNESS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(HARNESS_DIR))
 
-from prebuilt import AGENT_DOCKERFILE, VERIFY_CMD, agent_image_name  # noqa: E402
+from prebuilt import AGENT_DOCKERFILE, PYTHON_VERSION_CMD, VERIFY_CMD, agent_image_name  # noqa: E402
 from susvibes.core.utils import load_file, resolve_image_name  # noqa: E402
 
 REPO_ROOT = HARNESS_DIR.parent.parent
@@ -175,9 +175,14 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
         prune_builder(args)  # the builder's copy of the base layers isn't needed for the upload
         verified = check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
                           "--entrypoint", "/bin/sh", agent_image, "-c", VERIFY_CMD], "offline check of agent image")
-        stream_to_vm(ssh, [task_image, agent_image])
         # e.g. "python=3.7.17 filemap=no": tasks without the filemap view are worth knowing about.
         env_info = verified.strip().splitlines()[-1] if verified.strip() else ""
+        own_python = check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
+                            "--entrypoint", "/bin/sh", task_image, "-c", PYTHON_VERSION_CMD],
+                           "python3 version of task image").strip().splitlines()[-1]
+        if f"python={own_python} " not in env_info + " ":
+            raise RuntimeError(f"agent image runs python3 {env_info}, task image runs {own_python}")
+        stream_to_vm(ssh, [task_image, agent_image])
         return {"status": "shipped", "seconds": round(time.time() - started), "env": env_info}
     finally:
         to_remove = [agent_image] + ([] if had_task_image else [task_image])

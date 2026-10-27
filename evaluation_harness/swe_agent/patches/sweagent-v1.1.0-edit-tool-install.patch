@@ -1,20 +1,23 @@
 diff --git a/tools/edit_anthropic/install.sh b/tools/edit_anthropic/install.sh
-index ba40265..e464069 100644
+index ba40265..3182f8c 100644
 --- a/tools/edit_anthropic/install.sh
 +++ b/tools/edit_anthropic/install.sh
-@@ -1,2 +1,12 @@
+@@ -1,2 +1,15 @@
 -pip install 'tree-sitter==0.21.3'
 -pip install 'tree-sitter-languages'
 \ No newline at end of file
 +# SusVibes: tree-sitter only powers the filemap view of large .py files (str_replace_editor falls
 +# back to truncated output without it), so a missing install must not abort the run. Skip it when
-+# already importable (prebuilt images, no network needed) or impossible (0.21.3 needs Python >= 3.8);
-+# install with `python3 -m pip` so it lands in the interpreter the tool runs under.
++# already importable (prebuilt images, no network needed) or impossible (0.21.3 needs Python >= 3.8;
++# some task images ship Python without pip, which is left as is). Install with `python3 -m pip` so
++# it lands in the interpreter the tool runs under.
 +if python3 -c "import tree_sitter, tree_sitter_languages" 2>/dev/null; then
 +    :
-+elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
++elif ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
++    echo "Python < 3.8: tree-sitter unavailable; filemap view disabled."
++elif ! python3 -m pip --version >/dev/null 2>&1; then
++    echo "No pip for python3: tree-sitter unavailable; filemap view disabled."
++else
 +    python3 -m pip install 'tree-sitter==0.21.3' && python3 -m pip install 'tree-sitter-languages' \
 +        || echo "tree-sitter install failed; filemap view disabled."
-+else
-+    echo "Python < 3.8: tree-sitter unavailable; filemap view disabled."
 +fi

@@ -25,15 +25,18 @@ AGENT_IMAGE_PREFIX = "susvibes-agent"
 TOOL_INSTALL_SCRIPT = """\
 # SusVibes: tree-sitter only powers the filemap view of large .py files (str_replace_editor falls
 # back to truncated output without it), so a missing install must not abort the run. Skip it when
-# already importable (prebuilt images, no network needed) or impossible (0.21.3 needs Python >= 3.8);
-# install with `python3 -m pip` so it lands in the interpreter the tool runs under.
+# already importable (prebuilt images, no network needed) or impossible (0.21.3 needs Python >= 3.8;
+# some task images ship Python without pip, which is left as is). Install with `python3 -m pip` so
+# it lands in the interpreter the tool runs under.
 if python3 -c "import tree_sitter, tree_sitter_languages" 2>/dev/null; then
     :
-elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
+elif ! python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" 2>/dev/null; then
+    echo "Python < 3.8: tree-sitter unavailable; filemap view disabled."
+elif ! python3 -m pip --version >/dev/null 2>&1; then
+    echo "No pip for python3: tree-sitter unavailable; filemap view disabled."
+else
     python3 -m pip install 'tree-sitter==0.21.3' && python3 -m pip install 'tree-sitter-languages' \\
         || echo "tree-sitter install failed; filemap view disabled."
-else
-    echo "Python < 3.8: tree-sitter unavailable; filemap view disabled."
 fi
 """
 _SCRIPT_B64 = base64.b64encode(TOOL_INSTALL_SCRIPT.encode()).decode()
@@ -59,21 +62,32 @@ RUN /root/python3.11/bin/pip3 install --no-cache-dir swe-rex=={SWEREX_VERSION}
 FROM $BASE_IMAGE
 RUN if command -v apt-get >/dev/null; then \\
         apt-get update && apt-get install -y libc6 && rm -rf /var/lib/apt/lists/*; fi
+# No LD_LIBRARY_PATH: the build's rpath finds libpython, and the variable would make a task image's
+# own shared-library Python 3.11 load this one's libpython instead of its own.
 COPY --from=builder /root/python3.11 /root/python3.11
-ENV LD_LIBRARY_PATH=/root/python3.11/lib:${{LD_LIBRARY_PATH:-}}
 RUN ln -s /root/python3.11/bin/swerex-remote /usr/local/bin/swerex-remote && swerex-remote --version
 RUN {_RUN_TOOL_INSTALL} && rm /tmp/susvibes-tool-install.sh
 """
 
 # Run with `--network none`. Proves swe-rex starts and install.sh completes offline; on Python >= 3.8
-# tree-sitter must import (else install.sh would try PyPI at every start). Prints the session's
+# with pip, tree-sitter must import (else install.sh would try PyPI at every start). Prints the session's
 # Python version and whether the filemap view is available, for the ship log.
 VERIFY_CMD = (
     f"swerex-remote --version >/dev/null && {_RUN_TOOL_INSTALL} >/dev/null && bash -c '{_IN_SESSION}"
     'v=$(python3 -c "import sys; print(sys.version.split()[0])"); '
     'if python3 -c "import tree_sitter, tree_sitter_languages" 2>/dev/null; then f=yes; '
-    'elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))"; then echo "tree-sitter missing"; exit 1; '
+    'elif python3 -c "import sys; sys.exit(sys.version_info < (3, 8))" && python3 -m pip --version >/dev/null 2>&1; '
+    'then echo "tree-sitter missing"; exit 1; '
     "else f=no; fi; echo python=$v filemap=$f'"
+)
+
+
+# The session's python3 version, run in the task image itself: the agent image must report the same
+# one, or the added layers changed which interpreter the project runs under.
+PYTHON_VERSION_CMD = (
+    f"bash -c '{_IN_SESSION}"
+    'python3 -c "import sys; print(sys.version.split()[0])" 2>/dev/null || echo none'
+    "'"
 )
 
 
