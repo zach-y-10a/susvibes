@@ -160,9 +160,10 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
     task_image = tagged(resolve_image_name(record["image_name"]))
     agent_image = agent_image_name(record["image_name"])
     started = time.time()
-    # Peak local use while a task is in flight is about 3x its compressed size: Docker's unpacked
-    # copy plus the builder's own copy of the base layers.
-    need_gb = 3 * (task_image_gb(task_image) or 2.0)
+    # Peak local use while a task is in flight: Docker's unpacked copy (up to ~3x the compressed size,
+    # e.g. streamlit 10.6 -> 28 GB) plus the builder's own copy of the base layers. Docker Desktop also
+    # hands freed space back to macOS only gradually, so leave a wide margin.
+    need_gb = 5 * (task_image_gb(task_image) or 2.0)
     if not reserve_local_disk(need_gb, args.min_local_free_gb, stop):
         return {"status": "skipped"}
     had_task_image = run(["docker", "image", "inspect", task_image]).returncode == 0
