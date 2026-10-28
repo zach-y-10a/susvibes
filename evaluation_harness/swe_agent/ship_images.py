@@ -47,6 +47,7 @@ PLATFORM = "linux/amd64"
 log_lock = threading.Lock()
 quota_lock = threading.Lock()
 disk_lock = threading.Lock()
+prune_lock = threading.Lock()
 reserved_gb = 0.0  # local disk promised to tasks in flight (guarded by disk_lock)
 
 
@@ -173,7 +174,7 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
         check(["docker", "buildx", "build", "--builder", BUILDER, "--platform", PLATFORM, "--load",
                "-q", "--build-arg", f"BASE_IMAGE={task_image}", "-t", agent_image, "-"],
               "build agent image", input=AGENT_DOCKERFILE)
-        prune_builder(args)  # the builder's copy of the base layers isn't needed for the upload
+        prune_builder()  # the builder's copy of the base layers isn't needed for the upload
         verified = check(["docker", "run", "--rm", "--network", "none", "--platform", PLATFORM,
                           "--entrypoint", "/bin/sh", agent_image, "-c", VERIFY_CMD], "offline check of agent image")
         # e.g. "python=3.7.17 filemap=no": tasks without the filemap view are worth knowing about.
@@ -188,12 +189,24 @@ def ship_task(record: dict, args, ssh: list[str], stop: threading.Event) -> dict
     finally:
         to_remove = [agent_image] + ([] if had_task_image else [task_image])
         run(["docker", "rmi", "-f", *to_remove])
-        prune_builder(args)
+        prune_builder()
+        return_freed_space()
         release_local_disk(need_gb)
 
 
-def prune_builder(args) -> None:
-    run(["docker", "buildx", "prune", "--builder", BUILDER, "-f", "--max-used-space", f"{args.builder_cache_gb}gb"])
+def prune_builder() -> None:
+    """Empty the builder's storage. It keeps its own copy of every base image it builds on, and a
+    size-capped prune doesn't bound that copy (it reached 47 GB), so nothing is kept between tasks;
+    each build recompiles the bundled Python (~15 min under emulation)."""
+    with prune_lock:
+        run(["docker", "buildx", "prune", "--builder", BUILDER, "-af"])
+
+
+def return_freed_space() -> None:
+    """Docker Desktop hands space freed inside its VM back to macOS only lazily, so the local free-space
+    check would lag far behind. Trim the VM's disk now."""
+    run(["docker", "run", "--rm", "--privileged", "--pid=host", "alpine", "nsenter", "-t", "1", "-m", "--",
+         "fstrim", "/var/lib"])
 
 
 def log(entry: dict) -> None:
@@ -213,8 +226,6 @@ def main():
                         help="Free disk to keep on this machine, after what tasks in flight have reserved.")
     parser.add_argument("--min_vm_free_gb", type=float, default=40,
                         help="Stop once the VM's Docker disk has less free space.")
-    parser.add_argument("--builder_cache_gb", type=float, default=8,
-                        help="Build cache kept on the dedicated builder (keeps the Python build warm).")
     args = parser.parse_args()
 
     ssh = shlex.split(os.environ.get("SV_VM_SSH", DEFAULT_SSH))
