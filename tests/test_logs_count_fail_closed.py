@@ -61,3 +61,26 @@ def test_unittest_summary_block_without_status_is_not_a_pass() -> None:
     logs = "Ran 54 tests in 0.600s\n\nSummary:\nTests run: 54\nFailures: 0\nErrors: 0\n"
     with pytest.raises(RuntimeError, match="No executed test counts"):
         LogsCount.from_dict(NOVA).handle(logs, False, LOGGER)
+
+
+# openstack/neutron (8c21...): unittest prints a blank line between "Ran N tests" and "OK".
+NEUTRON_ID = "openstack__neutron_8c213e45902e21d2fe00639ef7d92b35304bde82"
+
+
+def _neutron_handler() -> LogsCount:
+    import json
+    from pathlib import Path
+
+    import susvibes
+    specs = json.loads((Path(susvibes.__file__).parent / "env_specs/default/logs_handler.json").read_text())
+    return LogsCount.from_dict(specs[NEUTRON_ID]["count"])
+
+
+def test_unittest_blank_line_before_ok_is_completed() -> None:
+    pf = _neutron_handler().handle("Ran 125 tests in 3.545s\n\nOK\n", False, LOGGER)
+    assert pf.completed() and pf.failures == 0
+
+
+def test_unittest_blank_line_before_failed_counts_failures() -> None:
+    pf = _neutron_handler().handle("Ran 125 tests in 3.545s\n\nFAILED (failures=3)\n", False, LOGGER)
+    assert pf.completed() and pf.failures == 3

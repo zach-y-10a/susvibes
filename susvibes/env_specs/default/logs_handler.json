@@ -1215,7 +1215,7 @@
     "count": {
       "logs_parser": {
         "FAILED": "^FAILED \\(.*?failures=(\\d+).*?\\)$",
-        "PASSED": "^Ran (\\d+) tests.*\\nOK$",
+        "PASSED": "^Ran (\\d+) tests.*\\n\\s*OK$",
         "SKIPPED": "",
         "ERROR": "^FAILED \\(.*?errors=(\\d+).*?\\)$",
         "XFAIL": ""
