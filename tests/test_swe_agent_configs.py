@@ -84,6 +84,19 @@ def test_prebuilt_task_skips_build_and_pull(tmp_path: Path) -> None:
                   image="susvibes-agent/x:y", python_standalone_dir=None, pull="never")
     deployment = port.task_instances[0]["env"]["deployment"]
     assert deployment["python_standalone_dir"] is None and deployment["pull"] == "never"
+    assert "--ulimit=nofile=1048576:1048576" in deployment["docker_args"]
+
+
+def test_eval_container_caps_open_files(monkeypatch) -> None:
+    from unittest import mock
+
+    from susvibes.core import env
+
+    fake_client = mock.MagicMock()
+    monkeypatch.setattr(env, "docker_client", fake_client)
+    env.Deployment(mock.MagicMock(), mock.MagicMock()).create_container(command="true")
+    (ulimit,) = fake_client.containers.create.call_args.kwargs["ulimits"]
+    assert (ulimit.name, ulimit.soft, ulimit.hard) == ("nofile", 1048576, 1048576)
 
 
 def test_eval_uses_local_image_when_pull_is_missing(monkeypatch) -> None:

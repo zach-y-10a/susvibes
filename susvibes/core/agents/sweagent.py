@@ -87,6 +87,7 @@ class SWEAgentPort:
         docker_args = [
             f"--memory={ContainerLimits.MEM_LIMIT}",
             f"--cpus={ContainerLimits.CPU_LIMIT}",
+            f"--ulimit=nofile={ContainerLimits.NOFILE}:{ContainerLimits.NOFILE}",
         ]
         if self.mount_docker_socket:
             docker_args = ["-v", "/var/run/docker.sock:/var/run/docker.sock"] + docker_args

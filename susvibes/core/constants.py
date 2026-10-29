@@ -39,6 +39,10 @@ class ContainerLimits:
     MEM_LIMIT = "{}g".format(
         min(int(os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES') / (1024 ** 3) * 0.75), 16))
     CPU_LIMIT = min(16, max(1, int(os.cpu_count() * 0.75)))
+    # Open-file limit (soft = hard). Docker hands containers the daemon's own limit, which on some
+    # hosts is ~1e9: tests that open files until EMFILE (twisted's test_closePeerOnEMFILE) then run
+    # for minutes each instead of milliseconds. 1048576 is Docker's long-standing default.
+    NOFILE = 1048576
 
 # Connections the shared docker client keeps to the daemon. The SDK's default of 10 caps how many
 # threads can talk to docker at once: past that, urllib3 discards connections and a stage running

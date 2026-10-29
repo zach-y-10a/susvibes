@@ -244,6 +244,7 @@ class Deployment():
                 entrypoint=entrypoint,
                 environment=environment,
                 volumes=volumes,
+                ulimits=[docker.types.Ulimit(name="nofile", soft=ContainerLimits.NOFILE, hard=ContainerLimits.NOFILE)],
             )
             self.logger.info(f"Container for {self.image.id} created: {container.name}")
             self.container = container
